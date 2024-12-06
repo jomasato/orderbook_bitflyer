@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BitFlyer OrderBook</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            margin: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #2d2d2d;
+            border-radius: 8px;
+        }
+        .status {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .connected { color: #4CAF50; }
+        .disconnected { color: #f44336; }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .mid-price {
+            font-size: 24px;
+            color: #ffd700;
+        }
+        .orderbook {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .asks, .bids {
+            position: relative;
+        }
+        .order-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            padding: 5px;
+            position: relative;
+            z-index: 1;
+        }
+        .depth-bar {
+            position: absolute;
+            height: 100%;
+            opacity: 0.3;
+            z-index: 0;
+        }
+        .ask-bar {
+            background-color: #f44336;
+            right: 0;
+        }
+        .bid-bar {
+            background-color: #4CAF50;
+            left: 0;
+        }
+        .ask-price { color: #f44336; }
+        .bid-price { color: #4CAF50; }
+        .size { text-align: right; }
+        .total { text-align: right; }
+        .column-headers {
+            color: #888;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="status" class="status disconnected">Status: Disconnected</div>
+        <div class="header">
+            <h2>BitFlyer Order Book</h2>
+            <div class="mid-price" id="midPrice">Mid Price: ¥0</div>
+        </div>
+        <div class="orderbook">
+            <div class="asks">
+                <div class="column-headers order-row">
+                    <div>Price (JPY)</div>
+                    <div class="size">Size (BTC)</div>
+                    <div class="total">Total</div>
+                </div>
+                <div id="asks"></div>
+            </div>
+            <div class="bids">
+                <div class="column-headers order-row">
+                    <div>Price (JPY)</div>
+                    <div class="size">Size (BTC)</div>
+                    <div class="total">Total</div>
+                </div>
+                <div id="bids"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket('ws://localhost:8000/ws');
+        const status = document.getElementById('status');
+        const midPrice = document.getElementById('midPrice');
+        const asks = document.getElementById('asks');
+        const bids = document.getElementById('bids');
+
+        function calculateDepth(orders) {
+            let totalSize = 0;
+            return orders.map(order => {
+                totalSize += parseFloat(order.size);
+                return { ...order, totalSize };
+            });
+        }
+
+        function getWidthPercentage(totalSize, maxSize) {
+            return `${(totalSize / maxSize * 100).toFixed(1)}%`;
+        }
+
+        function updateOrderBook(data) {
+            const processedAsks = calculateDepth(data.asks || []);
+            const processedBids = calculateDepth(data.bids || []);
+            const maxDepth = Math.max(
+                processedAsks[processedAsks.length - 1]?.totalSize || 0,
+                processedBids[processedBids.length - 1]?.totalSize || 0
+            );
+
+            // Update mid price
+            midPrice.textContent = `Mid Price: ¥${parseFloat(data.mid_price).toLocaleString()}`;
+
+            // Update asks
+            asks.innerHTML = processedAsks.map(ask => `
+                <div class="order-row">
+                    <div class="depth-bar ask-bar" style="width: ${getWidthPercentage(ask.totalSize, maxDepth)}"></div>
+                    <div class="ask-price">${parseFloat(ask.price).toLocaleString()}</div>
+                    <div class="size">${parseFloat(ask.size).toFixed(3)}</div>
+                    <div class="total">${ask.totalSize.toFixed(3)}</div>
+                </div>
+            `).join('');
+
+            // Update bids
+            bids.innerHTML = processedBids.map(bid => `
+                <div class="order-row">
+                    <div class="depth-bar bid-bar" style="width: ${getWidthPercentage(bid.totalSize, maxDepth)}"></div>
+                    <div class="bid-price">${parseFloat(bid.price).toLocaleString()}</div>
+                    <div class="size">${parseFloat(bid.size).toFixed(3)}</div>
+                    <div class="total">${bid.totalSize.toFixed(3)}</div>
+                </div>
+            `).join('');
+        }
+
+        ws.onopen = function() {
+            status.textContent = 'Status: Connected';
+            status.classList.remove('disconnected');
+            status.classList.add('connected');
+        };
+
+        ws.onclose = function() {
+            status.textContent = 'Status: Disconnected';
+            status.classList.remove('connected');
+            status.classList.add('disconnected');
+        };
+
+        ws.onerror = function(error) {
+            console.error('WebSocket error:', error);
+        };
+
+        ws.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                updateOrderBook(data);
+            } catch (error) {
+                console.error('Error processing message:', error);
+            }
+        };
+    </script>
+</body>
+</html>

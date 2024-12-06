@@ -1,0 +1,112 @@
+エンドポイント
+
+https://io.lightstream.bitflyer.com
+🚧
+websocket transport のみをサポートしています。多くのクライアントにおいて、これを明示的に指定する必要があります。
+接続には TLS 1.2 に対応したクライアントや、場合によっては明示的な設定が必要となります。
+メソッド
+auth - 認証要求をします
+io.Socket#emit("auth", { /* (Auth Params) */ }, callbackFn)
+(Auth Params) の内容は認証ページを参照してください
+callbackFn 関数は必ず実装してください (第1引数でエラーを確認できます)
+subscribe - チャンネルの購読を開始します
+io.Socket#emit("subscribe", "(Channel Name)"[, callbackFn])
+unsubscribe - チャンネルの購読を解除します
+io.Socket#emit("unsubscribe", "(Channel Name)"[, callbackFn])
+イベント
+(Channel Name) - 購読しているチャンネルのメッセージが配信されます
+利用例
+JavaScript
+Java
+
+// Node.js (JavaScript)
+const crypto = require("crypto");
+const io = require("socket.io-client");
+
+const key = "{{ YOUR API KEY }}";
+const secret = "{{ YOUR API SECRET }}";
+
+const publicChannels = ["lightning_executions_BTC_JPY"];
+const privateChannels = ["child_order_events", "parent_order_events"];
+
+const socket = io("https://io.lightstream.bitflyer.com", {
+    transports: ["websocket"] // specify explicitly
+});
+
+// connection handling
+socket.on("connect", () => {
+    // subscribe to the Public Channels
+    for (const ch of publicChannels) {
+        socket.emit("subscribe", ch, err => {
+            if (err) {
+                console.error(ch, "Subscribe Error:", err);
+                return;
+            }
+            console.log(ch, "Subscribed.");
+        });
+    }
+
+    // authentication parameters
+    const now = Date.now();
+    const nonce = crypto.randomBytes(16).toString("hex");
+    const sign = crypto.createHmac("sha256", secret).update(`${now}${nonce}`).digest("hex");
+
+    // request auth
+    socket.emit("auth", {
+        api_key: key,
+        timestamp: now,
+        nonce: nonce,
+        signature: sign
+    }, err => {
+        if (err) {
+            console.error("auth", "Authentication Error:", err);
+            return;
+        }
+        console.log("auth", "Authenticated.");
+
+        // subscribe to the Private Channels
+        for (const ch of privateChannels) {
+            socket.emit("subscribe", ch, err => {
+                if (err) {
+                    console.error(ch, "Subscribe Error:", err);
+                    return;
+                }
+                console.log(ch, "Subscribed.");
+            });
+        }
+    });
+});
+
+// set event listeners for all channels
+for (const ch of [...publicChannels, ...privateChannels]) {
+    socket.on(ch, message => {
+        console.log(ch, message);
+    });
+}
+
+Channel Name
+
+lightning_board_{product_code}
+{product_code} は、マーケットの一覧で取得できるものです。 alias は使用できません。
+
+BTC/JPY (現物): lightning_board_BTC_JPY
+bitFlyer Crypto CFD: lightning_board_FX_BTC_JPY
+ETH/BTC: lightning_board_ETH_BTC
+配信内容
+板情報に更新があったとき、その差分を配信します。
+
+size は価格に対応する注文の合計数量です。
+価格に対応する注文が約定や失効等で板から消えた時、size: 0 として配信されます。
+板寄せ時の成行注文が約定した時、price: 0 の差分として配信されます。
+JSON
+
+{
+  "mid_price": 35625,
+  "bids": [
+    {
+      "price": 33350,
+      "size": 1
+    }
+  ],
+  "asks": []
+}
